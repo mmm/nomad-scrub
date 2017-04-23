@@ -6,3 +6,4 @@ samples/
 *.tfvars
 *.backup
 .terraform/
+.envrc
