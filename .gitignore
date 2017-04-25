@@ -7,3 +7,4 @@ samples/
 *.backup
 .terraform/
 .envrc
+tmp/
