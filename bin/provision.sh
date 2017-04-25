@@ -1,99 +1,133 @@
 #!/bin/bash
-set -e
 
-# Set the mode for the provisioning. This can be "vagrant", "server", or
-# "client"
-MODE="vagrant"
-if [ $1 == "server" ]; then
-  MODE=$1
-elif [ $1 == "client" ]; then
-  MODE=$1
-elif [ $1 == "vagrant" ]; then
-  MODE=$1
-fi
-echo "Provisioning mode: $MODE"
-
-# Get the packages necessary for add-apt-respository
-sudo apt-get install -y software-properties-common
-
-# Add the ffmpeg PPA
-yes | sudo add-apt-repository ppa:mc3man/trusty-media
-
-# Update the package versions
-sudo apt-get update
-
-# Install the latest version of necessary packages
-sudo apt-get install -y s3cmd ffmpeg unzip docker.io
-
-# Instead of symlink, move ffmpeg to be inside the chroot for Nomad
-sudo rm /usr/bin/ffmpeg
-sudo cp /opt/ffmpeg/bin/ffmpeg /usr/bin/ffmpeg
-
-# Install the datadog agent
-if [ ! -z $DD_API_KEY ]; then
-  bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/dd-agent/master/packaging/datadog-agent/source/install_agent.sh)"
-fi
-
-# Download the latest build of Nomad
-wget -nv -O /tmp/nomad.zip "https://releases.hashicorp.com/nomad/0.5.4/nomad_0.5.4_linux_amd64.zip"
-
-# Unzip and install nomad
-unzip /tmp/nomad.zip
-sudo chmod +x nomad
-sudo mv nomad /usr/bin/nomad
-
-# Determine the configuration
-if [ $MODE == "vagrant" ]; then
-  BIND="127.0.0.1"
-  SERVER_ENABLED="true"
-  CLIENT_ENABLED="true"
-  BOOTSTRAP="1"
-  ADVERTISE='
-advertise {
-  http="127.0.0.1"
-  rpc="127.0.0.1"
-  serf="127.0.0.1"
+usage() {
+  echo "Usage $0 <role> <server_ip>
+  where role is `server` or `client`
+  and where server_ip is ipv4 for a consul/nomad server"
+  exit 1
 }
-'
-elif [ $MODE == "server" ]; then
-  BIND="0.0.0.0"
-  SERVER_ENABLED="true"
-  CLIENT_ENABLED="false"
-  BOOTSTRAP="1"
-  ADVERTISE=""
-elif [ $MODE == "client" ]; then
-  BIND="127.0.0.1"
-  SERVER_ENABLED="false"
-  CLIENT_ENABLED="true"
-  BOOTSTRAP="0"
-  ADVERTISE=""
-fi
+(( $# == 2 )) || usage
 
-# Create the configuration directory and populate
-sudo mkdir -p /etc/nomad.d/
-sudo mkdir -p /var/nomad/
-cat >/tmp/agent.json <<EOL
-data_dir = "/var/nomad/"
-bind_addr = "$BIND"
+case "$1" in
+  server)
+    SERVER_ENABLED=true
+    CLIENT_ENABLED=false
+    ;;
+  client)
+    SERVER_ENABLED=false
+    CLIENT_ENABLED=true
+    ;;
+esac
 
+SERVER_IP=$2
+
+logger "running nomad provisioner"
+
+install_packages() {
+  apt-get -qq update
+
+  apt-get -qq -y install wget curl bash-completion unzip dnsmasq awscli jq
+}
+install_packages
+
+install_consul() {
+  wget -nv -O /tmp/consul_0.8.1_linux_amd64.zip "https://releases.hashicorp.com/consul/0.8.1/consul_0.8.1_linux_amd64.zip"
+  unzip /tmp/consul*.zip
+  chmod +x consul
+  mv consul /usr/bin/consul
+  mkdir -p /etc/consul.d/
+  mkdir -p /var/lib/consul/
+  mkdir -p /usr/share/consul/
+
+cat >/etc/consul.d/consul.json <<EOL
+{
+  "datacenter": "us-west-2",
+  "rejoin_after_leave": true,
+  "domain": "consul",
+  "server": $SERVER_ENABLED,
+  "bootstrap_expect": $([ "$SERVER_ENABLED" == "true" ] && echo 1 || echo 0),
+  "data_dir": "/var/lib/consul",
+  "ui_dir": "/usr/share/consul",
+  "disable_remote_exec": true,
+  "http_api_response_headers": {
+    "Access-Control-Allow-Origin": "*"
+  },
+  "dns_config": {
+    "allow_stale": true,
+    "max_stale": "5s"
+  }
+}
+EOL
+cat >/etc/init/consul.conf <<EOL
+# consul - Consul agent
+
+description "agent to participate in a Consul cluster"
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+respawn
+exec consul agent -config-dir /etc/consul.d/
+EOL
+cat >/etc/systemd/system/consul.service <<EOL
+[Unit]
+Description=Consul Agent
+After=dnsmasq.service
+
+[Service]
+Environment=GOMAXPROCS=`nproc`
+ExecStart=/usr/bin/consul agent -config-dir=/etc/consul.d
+
+[Install]
+WantedBy=default.target
+EOL
+service consul restart
+sleep 5 
+consul join $SERVER_IP
+
+cat >/tmp/dnsmasq-consul-config <<EOL
+# Listen on all interfaces
+interface=*
+
+addn-hosts=/etc/hosts
+
+server=8.8.8.8
+server=8.8.4.4
+
+# configure DNS resolution to consul servers
+server=/consul/127.0.0.1#8600
+
+# reverse lookups
+#server=/0.0.10.in-addr.arpa/127.0.0.1#8600
+EOL
+#service dnsmasq restart
+}
+install_consul
+
+install_nomad() {
+  wget -nv -O /tmp/nomad_0.5.6_linux_amd64.zip "https://releases.hashicorp.com/nomad/0.5.6/nomad_0.5.6_linux_amd64.zip"
+  unzip /tmp/nomad*.zip
+  chmod +x nomad
+  mv nomad /usr/bin/nomad
+  mkdir -p /etc/nomad.d/
+  mkdir -p /var/lib/nomad/
+
+cat >/etc/nomad.d/nomad.hcl <<EOL
+datacenter="us-west-2"
+data_dir = "/var/lib/nomad"
+bind_addr = "0.0.0.0"
 server {
   enabled = $SERVER_ENABLED
-  bootstrap_expect = $BOOTSTRAP
+  bootstrap_expect = $([ "$SERVER_ENABLED" == "true" ] && echo 1 || echo 0)
 }
-
 client {
   enabled = $CLIENT_ENABLED
+  options = {
+    "driver.raw_exec.enable" = "1"
+  }
 }
-
-telemetry {
-  datadog_address = "127.0.0.1:8125"
-}
-$ADVERTISE
 EOL
-sudo mv /tmp/agent.json /etc/nomad.d/agent.json
-
-# Create the init script
-cat >/tmp/nomad.conf <<EOL
+cat >/etc/init/nomad.conf <<EOL
 # nomad - Nomad application scheduler agent
 
 description "agent to participate in a Nomad cluster"
@@ -104,10 +138,20 @@ stop on runlevel [!2345]
 respawn
 exec nomad agent -config /etc/nomad.d/
 EOL
-sudo mv /tmp/nomad.conf /etc/init/nomad.conf
+cat >/etc/systemd/system/nomad.service <<EOL
+[Unit]
+Description=Nomad Agent
+After=consul.service
 
-# Start nomad
-sudo start nomad || true
+[Service]
+Environment=GOMAXPROCS=`nproc`
+ExecStart=/usr/bin/nomad agent -config=/etc/nomad.d/
 
-# Wait for Nomad to start
-sleep 10
+[Install]
+WantedBy=default.target
+EOL
+service nomad restart
+}
+install_nomad
+
+logger "done"
