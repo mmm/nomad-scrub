@@ -27,7 +27,8 @@ Use nomad instead of yarn if your task doesn't need hdfs
 
 ## demo
 
-job run and s3 output bucket contents
+A demo job run and s3 output bucket contents is recorded
+[here](http://archive.markmims.com/box/talks/2017-04-25-hashitalk/media/nomad-scrub.mkv)
 
 
 ## attribution
