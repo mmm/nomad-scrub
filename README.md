@@ -1,3 +1,6 @@
+# Scheduling Data-Intensive Applications
+
+This is an example project supporting a talk of the same title.
 
 ## goal
 
@@ -27,7 +30,7 @@ Use nomad instead of yarn if your task doesn't need hdfs
 job run and s3 output bucket contents
 
 
-## notes
+## attribution
 
 hc already has an ffmpeg nomad exec example.  This repo started life as a fork
 of `github.com/hashicorp/nomad-dispatch-ffmpeg`.
