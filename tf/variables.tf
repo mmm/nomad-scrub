@@ -1,6 +1,3 @@
-# Datadog requires the API and APP key, no defaults
-variable "datadog_api_key" {}
-variable "datadog_app_key" {}
 
 # AWS requires an access key and secret
 variable "aws_access_key" {}

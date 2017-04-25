@@ -1,6 +1,6 @@
 # Setup AWS to use us-east-1
 provider "aws" {
-  region     = "us-east-1"
+  region     = "us-west-2"
   access_key = "${var.aws_access_key}"
   secret_key = "${var.aws_secret_key}"
 }
@@ -18,7 +18,7 @@ module "vpc" {
   enable_dns_support   = "true"
   enable_dns_hostnames = "true"
 
-  azs = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  azs = ["us-west-2a", "us-west-2b", "us-west-2c"]
 
   tags {
     "Terraform" = "true"

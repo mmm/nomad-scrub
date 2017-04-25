@@ -4,7 +4,7 @@ data "aws_ami" "ubuntu" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-trusty-14.04-amd64-server-*"]
+    values = ["ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server-*"]
   }
 
   filter {
@@ -29,9 +29,9 @@ resource "aws_security_group" "allow_all" {
   vpc_id      = "${module.vpc.vpc_id}"
 
   ingress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -47,7 +47,7 @@ resource "aws_security_group" "allow_all" {
 # as our bastion host into the rest of the cluster
 resource "aws_instance" "server" {
   ami           = "${data.aws_ami.ubuntu.id}"
-  instance_type = "c4.large"
+  instance_type = "t2.micro"
 
   tags {
     Name = "Nomad Server"
@@ -57,6 +57,7 @@ resource "aws_instance" "server" {
   associate_public_ip_address = "true"
   key_name                    = "${aws_key_pair.nomad-key.key_name}"
   vpc_security_group_ids      = ["${module.vpc.default_security_group_id}", "${aws_security_group.allow_all.id}"]
+  iam_instance_profile        = "${aws_iam_instance_profile.ec2_default_profile.id}"
 
   connection {
     user        = "ubuntu"
@@ -69,15 +70,14 @@ resource "aws_instance" "server" {
   }
 
   provisioner "file" {
-    source      = "../nomad/transcode.nomad"
-    destination = "/tmp/transcode.nomad"
+    source      = "../nomad/mmm.nomad"
+    destination = "/tmp/mmm.nomad"
   }
 
   provisioner "remote-exec" {
     inline = [
       "chmod +x /tmp/provision.sh",
-      "sudo DD_API_KEY=${var.datadog_api_key} /tmp/provision.sh server",
-      "nomad run /tmp/transcode.nomad",
+      "sudo /tmp/provision.sh server ${aws_instance.server.private_ip}",
     ]
   }
 }
@@ -87,7 +87,7 @@ resource "aws_instance" "server" {
 resource "aws_instance" "client" {
   count         = "${var.client_count}"
   ami           = "${data.aws_ami.ubuntu.id}"
-  instance_type = "c4.large"
+  instance_type = "t2.micro"
 
   tags {
     Name = "Nomad Client"
@@ -96,6 +96,7 @@ resource "aws_instance" "client" {
   subnet_id              = "${module.vpc.private_subnets[0]}"
   key_name               = "${aws_key_pair.nomad-key.key_name}"
   vpc_security_group_ids = ["${module.vpc.default_security_group_id}"]
+  iam_instance_profile   = "${aws_iam_instance_profile.ec2_default_profile.id}"
 
   connection {
     bastion_host = "${aws_instance.server.public_ip}"
@@ -104,8 +105,8 @@ resource "aws_instance" "client" {
   }
 
   provisioner "file" {
-    source      = "../bin/transcode.sh"
-    destination = "/tmp/transcode.sh"
+    source      = "../bin/nomad-exec-script.sh"
+    destination = "/tmp/nomad-exec-script.sh"
   }
 
   provisioner "file" {
@@ -115,11 +116,10 @@ resource "aws_instance" "client" {
 
   provisioner "remote-exec" {
     inline = [
-      "chmod +x /tmp/transcode.sh",
+      "chmod +x /tmp/nomad-exec-script.sh",
       "chmod +x /tmp/provision.sh",
-      "sudo mv /tmp/transcode.sh /usr/bin/transcode.sh",
-      "sudo DD_API_KEY=${var.datadog_api_key} /tmp/provision.sh client",
-      "nomad client-config -update-servers ${aws_instance.server.private_ip}:4647",
+      "sudo mv /tmp/nomad-exec-script.sh /usr/bin/nomad-exec-script.sh",
+      "sudo /tmp/provision.sh client ${aws_instance.server.private_ip}",
     ]
   }
 }
@@ -127,4 +127,10 @@ resource "aws_instance" "client" {
 # Output the nomad server address to make it easier to setup Nomad
 output "nomad_addr" {
   value = "http://${aws_instance.server.public_ip}:4646/"
+}
+output "server_ip" {
+  value = "${aws_instance.server.public_ip}"
+}
+output "client_ip" {
+  value = "${aws_instance.client.private_ip}"
 }
