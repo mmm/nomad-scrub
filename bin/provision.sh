@@ -58,17 +58,6 @@ cat >/etc/consul.d/consul.json <<EOL
   }
 }
 EOL
-cat >/etc/init/consul.conf <<EOL
-# consul - Consul agent
-
-description "agent to participate in a Consul cluster"
-
-start on runlevel [2345]
-stop on runlevel [!2345]
-
-respawn
-exec consul agent -config-dir /etc/consul.d/
-EOL
 cat >/etc/systemd/system/consul.service <<EOL
 [Unit]
 Description=Consul Agent
@@ -81,26 +70,9 @@ ExecStart=/usr/bin/consul agent -config-dir=/etc/consul.d
 [Install]
 WantedBy=default.target
 EOL
-service consul restart
-sleep 5 
-consul join $SERVER_IP
-
-cat >/tmp/dnsmasq-consul-config <<EOL
-# Listen on all interfaces
-interface=*
-
-addn-hosts=/etc/hosts
-
-server=8.8.8.8
-server=8.8.4.4
-
-# configure DNS resolution to consul servers
-server=/consul/127.0.0.1#8600
-
-# reverse lookups
-#server=/0.0.10.in-addr.arpa/127.0.0.1#8600
-EOL
-#service dnsmasq restart
+  service consul restart
+  sleep 5 
+  consul join $SERVER_IP
 }
 install_consul
 
@@ -126,17 +98,6 @@ client {
     "driver.raw_exec.enable" = "1"
   }
 }
-EOL
-cat >/etc/init/nomad.conf <<EOL
-# nomad - Nomad application scheduler agent
-
-description "agent to participate in a Nomad cluster"
-
-start on runlevel [2345]
-stop on runlevel [!2345]
-
-respawn
-exec nomad agent -config /etc/nomad.d/
 EOL
 cat >/etc/systemd/system/nomad.service <<EOL
 [Unit]

@@ -105,8 +105,8 @@ resource "aws_instance" "client" {
   }
 
   provisioner "file" {
-    source      = "../bin/nomad-exec-script.sh"
-    destination = "/tmp/nomad-exec-script.sh"
+    source      = "../bin/nomad-scrub.sh"
+    destination = "/tmp/nomad-scrub.sh"
   }
 
   provisioner "file" {
@@ -116,9 +116,9 @@ resource "aws_instance" "client" {
 
   provisioner "remote-exec" {
     inline = [
-      "chmod +x /tmp/nomad-exec-script.sh",
+      "chmod +x /tmp/nomad-scrub.sh",
       "chmod +x /tmp/provision.sh",
-      "sudo mv /tmp/nomad-exec-script.sh /usr/bin/nomad-exec-script.sh",
+      "sudo mv /tmp/nomad-scrub.sh /usr/bin/nomad-scrub.sh",
       "sudo /tmp/provision.sh client ${aws_instance.server.private_ip}",
     ]
   }
