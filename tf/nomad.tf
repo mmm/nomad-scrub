@@ -70,8 +70,8 @@ resource "aws_instance" "server" {
   }
 
   provisioner "file" {
-    source      = "../nomad/mmm.nomad"
-    destination = "/tmp/mmm.nomad"
+    source      = "../nomad/scrub.nomad"
+    destination = "/tmp/scrub.nomad"
   }
 
   provisioner "remote-exec" {
