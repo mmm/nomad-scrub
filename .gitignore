@@ -8,3 +8,4 @@ samples/
 .terraform/
 .envrc
 tmp/
+ssh-config
