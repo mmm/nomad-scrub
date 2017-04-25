@@ -1,0 +1,18 @@
+
+StrictHostKeyChecking no
+UserKnownHostsFile /dev/null
+
+Host nomad-server
+  # public ip for the ssh bastion
+  Hostname 52.33.255.70
+  User ubuntu
+  IdentityFile nomad-key.pem
+  ProxyCommand none
+
+Host nomad-client
+  # private ips for clients
+  Hostname 10.0.1.107
+  User ubuntu
+  IdentityFile nomad-key.pem
+  ProxyCommand ssh -F ssh-config nomad-server nc -q0 %h %p
+
